@@ -1,4 +1,5 @@
 import { pool } from "../db/pool";
+import { redisClient } from "../redis/client";
 import {
   Product,
   ProductRow,
@@ -19,7 +20,11 @@ function mapProductRow(row: ProductRow): Product {
   };
 }
 
-export async function getAllProducts(filters: {
+const PRODUCTS_ALL_CACHE_KEY = "products:all";
+
+const PRODUCTS_CACHE_TTL_SECONDS = 60;
+
+export async function fetchAllProductsFromDatabase(filters: {
   category?: string;
   search?: string;
 }): Promise<Product[]> {
@@ -40,6 +45,44 @@ export async function getAllProducts(filters: {
 
   const result = await pool.query<ProductRow>(query, values);
   return result.rows.map(mapProductRow);
+}
+
+export async function getAllProducts(filters: {
+  category?: string;
+  search?: string;
+}): Promise<Product[]> {
+  const hasFilters = Boolean(filters?.category || filters?.search);
+
+  // every filter combination need a separate cache
+  // products:all:search:keyboard
+  // products:all:category:accessories
+  if (hasFilters) { 
+    console.log("cache bypass: filtered product list");
+    return fetchAllProductsFromDatabase(filters);
+  }
+
+  // redis is not the source of truth here
+  const cachedProducts = await redisClient.get(PRODUCTS_ALL_CACHE_KEY);
+
+  if (cachedProducts) { 
+    console.log("cache hit: products:all");
+
+    return JSON.parse(cachedProducts) as Product[];
+  }
+
+  console.log("cache miss: products:all");
+  const products = await fetchAllProductsFromDatabase(filters);
+
+  // set our actual products data in redis cache
+  await redisClient.setEx(
+    PRODUCTS_ALL_CACHE_KEY,
+    PRODUCTS_CACHE_TTL_SECONDS,
+    JSON.stringify(products)
+  );
+
+  console.log("cache set: products:all");
+
+  return products;
 }
 
 export async function getProductById(id: number): Promise<Product | null> {
