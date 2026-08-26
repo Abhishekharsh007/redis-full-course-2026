@@ -8,7 +8,7 @@ const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const redis = createClient({ url: redisUrl });
 
 // cache key there
-const cacheKey = "demo:products";
+const cacheKey = "demo:products";   
 const cacheTtlSeconds = 60  // cache will expire after 60 seconds
 
 let dbProducts = ["Keyboard", "Mouse", "Laptop"];
